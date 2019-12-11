@@ -9,6 +9,7 @@ class TextPack():
     def __init__(self, df, columns_to_group, match_threshold=0.75, ngram_remove=r'[,-./]', ngram_length=3):
         self.df = df
         self.group_lookup = {}
+        self.threshold_lookup = {}
         self._column = self._get_column(columns_to_group)
         self._match_threshold = match_threshold
         self._ngram_remove = ngram_remove
@@ -42,16 +43,18 @@ class TextPack():
         else:
             return None
 
-    def _add_vals_to_lookup(self, group, y, x):
+    def _add_vals_to_lookup(self, group, y, x, score):
         self.group_lookup[y] = group
         self.group_lookup[x] = group
+        self.threshold_lookup[y] = score
+        self.threshold_lookup[x] = score
 
-    def _add_pair_to_lookup(self, row, col):
+    def _add_pair_to_lookup(self, row, col, score):
         group = self._find_group(row, col)
         if group is not None:
-            self._add_vals_to_lookup(group, row, col)
+            self._add_vals_to_lookup(group, row, col, score)
         else:
-            self._add_vals_to_lookup(row, row, col)
+            self._add_vals_to_lookup(row, row, col, score)
 
     def set_ngram_remove(self, ngram_remove):
         self._ngram_remove = ngram_remove
@@ -67,15 +70,17 @@ class TextPack():
 
         print('Building the TF-IDF, Cosine & Coord matrices...')
         coord_matrix = self._get_cosine_matrix(vals).tocoo()
-
+        
+        print(coord_matrix.data)
         print('Building the group lookup...')
-        for row, col in zip(coord_matrix.row, coord_matrix.col):
+        for row, col, data in zip(coord_matrix.row, coord_matrix.col, coord_matrix.data):
             if row != col:
-                self._add_pair_to_lookup(vals[row], vals[col])
+                self._add_pair_to_lookup(vals[row], vals[col], data)
 
     def add_grouped_column_to_data(self, column_name='Group'):
         print('Adding grouped columns to data frame...')
         self.df[column_name] = self.df[self._column].map(self.group_lookup).fillna(self.df[self._column])
+        self.df[column_name+'_Similarity'] = self.df[self._column].map(self.threshold_lookup).fillna(1.0)
 
     def run(self, column_name='Group'):
         self.build_group_lookup()
@@ -89,7 +94,7 @@ class TextPack():
         return self._filter_df_for_export().to_json(export_path)
 
     def export_csv(self, export_path=None):
-        return self._filter_df_for_export().to_csv(export_path)
+        return self._filter_df_for_export().to_csv(export_path, index=False)
 
 
 def read_json(json_path, columns_to_group, match_threshold=0.75, ngram_remove=r'[,-./]', ngram_length=3):
